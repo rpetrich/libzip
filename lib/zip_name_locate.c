@@ -45,6 +45,24 @@ zip_name_locate(zip_t *za, const char *fname, zip_flags_t flags) {
     return _zip_name_locate(za, fname, flags, &za->error);
 }
 
+static inline bool at_terminator(const char *s)
+{
+    return *s == '\0' || (*s == '/' && s[1] == '\0');
+}
+
+
+int _zip_name_cmp(const char *l, const char *r)
+{
+    while (__builtin_expect(!!(*l && (*l == *r)), 1)) {
+        ++l;
+        ++r;
+        if (at_terminator(l) && at_terminator(r)) {
+            return 0;
+        }
+    }
+    return *(const unsigned char *)l - *(const unsigned char *)r;
+}
+
 
 zip_int64_t
 _zip_name_locate(zip_t *za, const char *fname, zip_flags_t flags, zip_error_t *error) {
@@ -87,9 +105,9 @@ _zip_name_locate(zip_t *za, const char *fname, zip_flags_t flags, zip_error_t *e
     if (flags & (ZIP_FL_NOCASE | ZIP_FL_NODIR | ZIP_FL_ENC_RAW | ZIP_FL_ENC_STRICT)) {
         /* can't use hash table */
 #ifdef LIBZIP_MINIMAL
-        cmp = strcmp;
+        cmp = _zip_name_cmp;
 #else
-        cmp = (flags & ZIP_FL_NOCASE) ? strcasecmp : strcmp;
+        cmp = (flags & ZIP_FL_NOCASE) ? strcasecmp : _zip_name_cmp;
 #endif
 
         for (i = 0; i < za->nentry; i++) {

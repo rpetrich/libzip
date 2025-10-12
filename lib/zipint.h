@@ -698,6 +698,7 @@ const char *_zip_get_name(zip_t *, zip_uint64_t, zip_flags_t, zip_error_t *);
 int _zip_local_header_read(zip_t *, int);
 void *_zip_memdup(const void *, size_t, zip_error_t *);
 zip_int64_t _zip_name_locate(zip_t *, const char *, zip_flags_t, zip_error_t *);
+int _zip_name_cmp(const char *a, const char *b);
 zip_t *_zip_new(zip_error_t *);
 
 zip_int64_t _zip_file_replace(zip_t *, zip_uint64_t, const char *, zip_source_t *, zip_flags_t);
