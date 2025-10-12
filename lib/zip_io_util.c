@@ -61,6 +61,16 @@ _zip_read(zip_source_t *src, zip_uint8_t *b, zip_uint64_t length, zip_error_t *e
 }
 
 
+static void replace_nuls(zip_uint8_t *buf, size_t length)
+{
+    zip_uint8_t *o;
+    buf[length] = 0;
+    for (o = buf; o < buf + length; o++)
+        if (*o == '\0')
+            *o = ' ';
+}
+
+
 zip_uint8_t *
 _zip_read_data(zip_buffer_t *buffer, zip_source_t *src, size_t length, bool nulp, zip_error_t *error) {
     zip_uint8_t *r;
@@ -93,12 +103,8 @@ _zip_read_data(zip_buffer_t *buffer, zip_source_t *src, size_t length, bool nulp
     }
 
     if (nulp) {
-        zip_uint8_t *o;
         /* replace any in-string NUL characters with spaces */
-        r[length] = 0;
-        for (o = r; o < r + length; o++)
-            if (*o == '\0')
-                *o = ' ';
+        replace_nuls(r, length);
     }
 
     return r;
@@ -110,15 +116,47 @@ _zip_read_string(zip_buffer_t *buffer, zip_source_t *src, zip_uint16_t len, bool
     zip_uint8_t *raw;
     zip_string_t *s;
 
+#ifdef LIBZIP_MINIMAL
+    if ((s = (zip_string_t *)malloc(sizeof(*s) + len + nulp)) == NULL) {
+        zip_error_set(error, ZIP_ER_MEMORY, 0);
+        return NULL;
+    }
+
+    s->length = len;
+    raw = s->raw;
+    
+    if (buffer) {
+        zip_uint8_t *data = _zip_buffer_get(buffer, len);
+
+        if (data == NULL) {
+            free(s);
+            zip_error_set(error, ZIP_ER_MEMORY, 0);
+            return NULL;
+        }
+        (void)memcpy_s(raw, len, data, len);
+    } else {
+        if (_zip_read(src, raw, len, error) < 0) {
+            free(s);
+            return NULL;
+        }
+    }
+
+    if (nulp) {
+        replace_nuls(raw, len);
+    }
+    return s;
+#else
     if ((raw = _zip_read_data(buffer, src, len, nulp, error)) == NULL)
         return NULL;
 
     s = _zip_string_new(raw, len, ZIP_FL_ENC_GUESS, error);
     free(raw);
     return s;
+#endif
 }
 
 
+#ifndef LIBZIP_MINIMAL
 int
 _zip_write(zip_t *za, const void *data, zip_uint64_t length) {
     zip_int64_t n;
@@ -144,3 +182,4 @@ _zip_write(zip_t *za, const void *data, zip_uint64_t length) {
 
     return 0;
 }
+#endif

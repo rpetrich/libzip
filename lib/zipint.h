@@ -300,8 +300,10 @@ struct zip {
     char *default_password; /* password used when no other supplied */
 
     zip_string_t *comment_orig;    /* archive comment */
+#ifndef LIBZIP_MINIMAL
     zip_string_t *comment_changes; /* changed archive comment */
     bool comment_changed;          /* whether archive comment was changed */
+#endif
 
     zip_uint64_t nentry;       /* number of entries */
     zip_uint64_t nentry_alloc; /* number of entries allocated */
@@ -313,9 +315,11 @@ struct zip {
 
     zip_hash_t *names; /* hash table for name lookup */
 
+#ifndef LIBZIP_MINIMAL
     zip_progress_t *progress; /* progress callback for zip_close() */
 
     zip_uint32_t* write_crc; /* have _zip_write() compute CRC */
+#endif
     time_t torrent_mtime;
 };
 
@@ -397,7 +401,7 @@ struct zip_extra_field {
     zip_flags_t flags; /* in local/central header */
     zip_uint16_t id;   /* header id */
     zip_uint16_t size; /* data size */
-    zip_uint8_t *data;
+    zip_uint8_t data[];
 };
 
 enum zip_source_write_state {
@@ -418,7 +422,9 @@ struct zip_source {
     zip_error_t error;
     zip_int64_t supports;                 /* supported commands */
     unsigned int open_count;              /* number of times source was opened (directly or as lower layer) */
+#ifndef LIBZIP_MINIMAL
     zip_source_write_state_t write_state; /* whether source is open for writing */
+#endif
     bool source_closed;                   /* set if source archive is closed */
     zip_t *source_archive;                /* zip archive we're reading from, NULL if not from archive */
     unsigned int refcount;
@@ -428,27 +434,37 @@ struct zip_source {
 };
 
 #define ZIP_SOURCE_IS_OPEN_READING(src) ((src)->open_count > 0)
+#ifdef LIBZIP_MINIMAL
+#define ZIP_SOURCE_IS_OPEN_WRITING(src) false
+#else
 #define ZIP_SOURCE_IS_OPEN_WRITING(src) ((src)->write_state == ZIP_SOURCE_WRITE_OPEN)
+#endif
 #define ZIP_SOURCE_IS_LAYERED(src) ((src)->src != NULL)
 
 /* entry in zip archive directory */
 
 struct zip_entry {
-    zip_dirent_t *orig;
+    zip_dirent_t orig;
+#ifndef LIBZIP_MINIMAL
     zip_dirent_t *changes;
+#endif
     zip_source_t *source;
+#ifndef LIBZIP_MINIMAL
     bool deleted;
+#endif
 };
 
 
 /* file or archive comment, or filename */
 
 struct zip_string {
-    zip_uint8_t *raw;                /* raw string */
     zip_uint16_t length;             /* length of raw string */
+#ifndef LIBZIP_MINIMAL
     enum zip_encoding_type encoding; /* autorecognized encoding */
     zip_uint8_t *converted;          /* autoconverted string */
     zip_uint32_t converted_length;   /* length of converted */
+#endif
+    zip_uint8_t raw[];               /* raw string */
 };
 
 
@@ -472,12 +488,11 @@ struct zip_string {
 /* bounds checked access to memory buffer */
 
 struct zip_buffer {
-    bool ok;
-    bool free_data;
-
     zip_uint8_t *data;
     zip_uint64_t size;
     zip_uint64_t offset;
+    bool ok;
+    zip_uint8_t trailing_data[];
 };
 
 /* which files to write in which order */
@@ -500,9 +515,15 @@ typedef struct _zip_pkware_keys zip_pkware_keys_t;
 #define ZIP_MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ZIP_MIN(a, b) ((a) < (b) ? (a) : (b))
 
+#ifdef LIBZIP_MINIMAL
+#define ZIP_ENTRY_CHANGED(e, f) false
+#define ZIP_ENTRY_DATA_CHANGED(x) false
+#define ZIP_ENTRY_HAS_CHANGES(e) false
+#else
 #define ZIP_ENTRY_CHANGED(e, f) ((e)->changes && ((e)->changes->changed & (f)))
 #define ZIP_ENTRY_DATA_CHANGED(x) ((x)->source != NULL)
 #define ZIP_ENTRY_HAS_CHANGES(e) (ZIP_ENTRY_DATA_CHANGED(e) || (e)->deleted || ZIP_ENTRY_CHANGED((e), ZIP_DIRENT_ALL))
+#endif
 
 #define ZIP_IS_RDONLY(za) ((za)->ch_flags & ZIP_AFL_RDONLY)
 #define ZIP_IS_TORRENTZIP(za) ((za)->flags & ZIP_AFL_IS_TORRENTZIP)
@@ -533,7 +554,10 @@ zip_uint64_t _zip_buffer_get_64(zip_buffer_t *buffer);
 zip_uint8_t _zip_buffer_get_8(zip_buffer_t *buffer);
 zip_uint64_t _zip_buffer_left(zip_buffer_t *buffer);
 zip_buffer_t *_zip_buffer_new(zip_uint8_t *data, zip_uint64_t size);
+void _zip_buffer_init(zip_uint8_t *data, zip_uint64_t size, zip_buffer_t *out_buffer);
 zip_buffer_t *_zip_buffer_new_from_source(zip_source_t *src, zip_uint64_t size, zip_uint8_t *buf, zip_error_t *error);
+zip_buffer_t *_zip_buffer_from_source(zip_source_t *src, zip_uint64_t size, zip_uint8_t *buf, zip_error_t *error, zip_buffer_t *out_buffer, bool *should_free);
+int _zip_buffer_init_from_source(zip_source_t *src, zip_uint64_t size, zip_uint8_t *buf, zip_error_t *error, zip_buffer_t *out_buffer);
 zip_uint64_t _zip_buffer_offset(zip_buffer_t *buffer);
 bool _zip_buffer_ok(zip_buffer_t *buffer);
 zip_uint8_t *_zip_buffer_peek(zip_buffer_t *buffer, zip_uint64_t length);

@@ -62,6 +62,7 @@ zip_error_init(zip_error_t *err) {
     err->str = NULL;
 }
 
+#ifndef LIBZIP_MINIMAL
 ZIP_EXTERN void
 zip_error_init_with_code(zip_error_t *error, int ze) {
     zip_error_init(error);
@@ -77,6 +78,7 @@ zip_error_init_with_code(zip_error_t *error, int ze) {
             break;
     }
 }
+#endif
 
 
 ZIP_EXTERN int

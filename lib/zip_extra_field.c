@@ -105,7 +105,6 @@ _zip_ef_free(zip_extra_field_t *ef) {
 
     while (ef) {
         ef2 = ef->next;
-        free(ef->data);
         free(ef);
         ef = ef2;
     }
@@ -178,21 +177,14 @@ zip_extra_field_t *
 _zip_ef_new(zip_uint16_t id, zip_uint16_t size, const zip_uint8_t *data, zip_flags_t flags) {
     zip_extra_field_t *ef;
 
-    if ((ef = (zip_extra_field_t *)malloc(sizeof(*ef))) == NULL)
+    if ((ef = (zip_extra_field_t *)malloc(sizeof(*ef) + size)) == NULL)
         return NULL;
 
     ef->next = NULL;
     ef->flags = flags;
     ef->id = id;
     ef->size = size;
-    if (size > 0) {
-        if ((ef->data = (zip_uint8_t *)_zip_memdup(data, size, NULL)) == NULL) {
-            free(ef);
-            return NULL;
-        }
-    }
-    else
-        ef->data = NULL;
+    (void)memcpy_s(ef->data, size, data, size);
 
     return ef;
 }
@@ -200,34 +192,29 @@ _zip_ef_new(zip_uint16_t id, zip_uint16_t size, const zip_uint8_t *data, zip_fla
 
 bool
 _zip_ef_parse(const zip_uint8_t *data, zip_uint16_t len, zip_flags_t flags, zip_extra_field_t **ef_head_p, zip_error_t *error) {
-    zip_buffer_t *buffer;
+    zip_buffer_t buffer;
     zip_extra_field_t *ef, *ef2, *ef_head;
 
-    if ((buffer = _zip_buffer_new((zip_uint8_t *)data, len)) == NULL) {
-        zip_error_set(error, ZIP_ER_MEMORY, 0);
-        return false;
-    }
+    _zip_buffer_init((zip_uint8_t *)data, len, &buffer);
 
     ef_head = ef = NULL;
 
-    while (_zip_buffer_ok(buffer) && _zip_buffer_left(buffer) >= 4) {
+    while (_zip_buffer_ok(&buffer) && _zip_buffer_left(&buffer) >= 4) {
         zip_uint16_t fid, flen;
         zip_uint8_t *ef_data;
 
-        fid = _zip_buffer_get_16(buffer);
-        flen = _zip_buffer_get_16(buffer);
-        ef_data = _zip_buffer_get(buffer, flen);
+        fid = _zip_buffer_get_16(&buffer);
+        flen = _zip_buffer_get_16(&buffer);
+        ef_data = _zip_buffer_get(&buffer, flen);
 
         if (ef_data == NULL) {
             zip_error_set(error, ZIP_ER_INCONS, ZIP_ER_DETAIL_INVALID_EF_LENGTH);
-            _zip_buffer_free(buffer);
             _zip_ef_free(ef_head);
             return false;
         }
 
         if ((ef2 = _zip_ef_new(fid, flen, ef_data, flags)) == NULL) {
             zip_error_set(error, ZIP_ER_MEMORY, 0);
-            _zip_buffer_free(buffer);
             _zip_ef_free(ef_head);
             return false;
         }
@@ -240,22 +227,20 @@ _zip_ef_parse(const zip_uint8_t *data, zip_uint16_t len, zip_flags_t flags, zip_
             ef_head = ef = ef2;
     }
 
-    if (!_zip_buffer_eof(buffer)) {
+    if (!_zip_buffer_eof(&buffer)) {
         /* Android APK files align stored file data with padding in extra fields; ignore. */
         /* see https://android.googlesource.com/platform/build/+/master/tools/zipalign/ZipAlign.cpp */
         /* buffer is at most 64k long, so this can't overflow. */
-        size_t glen = _zip_buffer_left(buffer);
+        size_t glen = _zip_buffer_left(&buffer);
         zip_uint8_t *garbage;
-        garbage = _zip_buffer_get(buffer, glen);
+        garbage = _zip_buffer_get(&buffer, glen);
         if (glen >= 4 || garbage == NULL || memcmp(garbage, "\0\0\0", (size_t)glen) != 0) {
             zip_error_set(error, ZIP_ER_INCONS, ZIP_ER_DETAIL_EF_TRAILING_GARBAGE);
-            _zip_buffer_free(buffer);
+            _zip_buffer_free(&buffer);
             _zip_ef_free(ef_head);
             return false;
         }
     }
-
-    _zip_buffer_free(buffer);
 
     if (ef_head_p) {
         *ef_head_p = ef_head;
@@ -314,36 +299,29 @@ _zip_ef_size(const zip_extra_field_t *ef, zip_flags_t flags) {
 int
 _zip_ef_write(zip_t *za, const zip_extra_field_t *ef, zip_flags_t flags) {
     zip_uint8_t b[4];
-    zip_buffer_t *buffer = _zip_buffer_new(b, sizeof(b));
-
-    if (buffer == NULL) {
-        return -1;
-    }
+    zip_buffer_t buffer;
+    _zip_buffer_init(b, sizeof(b), &buffer);
 
     for (; ef; ef = ef->next) {
         if (ef->flags & flags & ZIP_EF_BOTH) {
-            _zip_buffer_set_offset(buffer, 0);
-            _zip_buffer_put_16(buffer, ef->id);
-            _zip_buffer_put_16(buffer, ef->size);
-            if (!_zip_buffer_ok(buffer)) {
+            _zip_buffer_set_offset(&buffer, 0);
+            _zip_buffer_put_16(&buffer, ef->id);
+            _zip_buffer_put_16(&buffer, ef->size);
+            if (!_zip_buffer_ok(&buffer)) {
                 zip_error_set(&za->error, ZIP_ER_INTERNAL, 0);
-                _zip_buffer_free(buffer);
                 return -1;
             }
             if (_zip_write(za, b, 4) < 0) {
-                _zip_buffer_free(buffer);
                 return -1;
             }
             if (ef->size > 0) {
                 if (_zip_write(za, ef->data, ef->size) < 0) {
-                    _zip_buffer_free(buffer);
                     return -1;
                 }
             }
         }
     }
 
-    _zip_buffer_free(buffer);
     return 0;
 }
 
@@ -352,7 +330,7 @@ int
 _zip_read_local_ef(zip_t *za, zip_uint64_t idx) {
     zip_entry_t *e;
     unsigned char b[4];
-    zip_buffer_t *buffer;
+    zip_buffer_t buffer;
     zip_uint16_t fname_len, ef_len;
 
     if (idx >= za->nentry) {
@@ -362,40 +340,37 @@ _zip_read_local_ef(zip_t *za, zip_uint64_t idx) {
 
     e = za->entry + idx;
 
-    if (e->orig == NULL || e->orig->local_extra_fields_read)
+    if (e->orig.local_extra_fields_read)
         return 0;
 
-    if (e->orig->offset + 26 > ZIP_INT64_MAX) {
+    if (e->orig.offset + 26 > ZIP_INT64_MAX) {
         zip_error_set(&za->error, ZIP_ER_SEEK, EFBIG);
         return -1;
     }
 
-    if (zip_source_seek(za->src, (zip_int64_t)(e->orig->offset + 26), SEEK_SET) < 0) {
+    if (zip_source_seek(za->src, (zip_int64_t)(e->orig.offset + 26), SEEK_SET) < 0) {
         zip_error_set_from_source(&za->error, za->src);
         return -1;
     }
 
-    if ((buffer = _zip_buffer_new_from_source(za->src, sizeof(b), b, &za->error)) == NULL) {
+    if (_zip_buffer_init_from_source(za->src, sizeof(b), b, &za->error, &buffer) < 0) {
         return -1;
     }
 
-    fname_len = _zip_buffer_get_16(buffer);
-    ef_len = _zip_buffer_get_16(buffer);
+    fname_len = _zip_buffer_get_16(&buffer);
+    ef_len = _zip_buffer_get_16(&buffer);
 
-    if (!_zip_buffer_eof(buffer)) {
-        _zip_buffer_free(buffer);
+    if (!_zip_buffer_eof(&buffer)) {
         zip_error_set(&za->error, ZIP_ER_INTERNAL, 0);
         return -1;
     }
-
-    _zip_buffer_free(buffer);
 
     if (ef_len > 0) {
         zip_extra_field_t *ef;
         zip_uint8_t *ef_raw;
 
         if (zip_source_seek(za->src, fname_len, SEEK_CUR) < 0) {
-            zip_error_set(&za->error, ZIP_ER_SEEK, errno);
+            zip_error_set_from_source(&za->error, za->src);
             return -1;
         }
 
@@ -412,16 +387,18 @@ _zip_read_local_ef(zip_t *za, zip_uint64_t idx) {
 
         if (ef) {
             ef = _zip_ef_remove_internal(ef);
-            e->orig->extra_fields = _zip_ef_merge(e->orig->extra_fields, ef);
+            e->orig.extra_fields = _zip_ef_merge(e->orig.extra_fields, ef);
         }
     }
 
-    e->orig->local_extra_fields_read = 1;
+    e->orig.local_extra_fields_read = 1;
 
+#ifndef LIBZIP_MINIMAL
     if (e->changes && e->changes->local_extra_fields_read == 0) {
-        e->changes->extra_fields = e->orig->extra_fields;
+        e->changes->extra_fields = e->orig.extra_fields;
         e->changes->local_extra_fields_read = 1;
     }
+#endif
 
     return 0;
 }

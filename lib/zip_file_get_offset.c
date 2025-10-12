@@ -49,12 +49,7 @@ _zip_file_get_offset(const zip_t *za, zip_uint64_t idx, zip_error_t *error) {
     zip_uint64_t offset;
     zip_int32_t size;
 
-    if (za->entry[idx].orig == NULL) {
-        zip_error_set(error, ZIP_ER_INTERNAL, 0);
-        return 0;
-    }
-
-    offset = za->entry[idx].orig->offset;
+    offset = za->entry[idx].orig.offset;
 
     if (zip_source_seek(za->src, (zip_int64_t)offset, SEEK_SET) < 0) {
         zip_error_set_from_source(error, za->src);
@@ -82,7 +77,7 @@ _zip_file_get_end(const zip_t *za, zip_uint64_t index, zip_error_t *error) {
         return 0;
     }
 
-    entry = za->entry[index].orig;
+    entry = &za->entry[index].orig;
 
     if (offset + entry->comp_size < offset || offset + entry->comp_size > ZIP_INT64_MAX) {
         zip_error_set(error, ZIP_ER_SEEK, EFBIG);

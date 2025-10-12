@@ -45,9 +45,11 @@ zip_source_stat(zip_source_t *src, zip_stat_t *st) {
         return -1;
     }
 
+#ifndef LIBZIP_MINIMAL
     if (src->write_state == ZIP_SOURCE_WRITE_REMOVED) {
         zip_error_set(&src->error, ZIP_ER_READ, ENOENT);
     }
+#endif
 
     zip_stat_init(st);
 

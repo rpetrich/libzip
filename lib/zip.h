@@ -267,7 +267,8 @@ enum zip_source_cmd {
     ZIP_SOURCE_ACCEPT_EMPTY,        /* whether empty files are valid archives */
     ZIP_SOURCE_GET_FILE_ATTRIBUTES, /* get additional file attributes */
     ZIP_SOURCE_SUPPORTS_REOPEN,     /* allow reading from changed entry */
-    ZIP_SOURCE_GET_DOS_TIME         /* get last modification time in DOS format */
+    ZIP_SOURCE_GET_DOS_TIME,        /* get last modification time in DOS format */
+    ZIP_SOURCE_GET_BUFFER           /* get direct access to an internal buffer */
 };
 typedef enum zip_source_cmd zip_source_cmd_t;
 
@@ -297,6 +298,7 @@ typedef enum zip_source_cmd zip_source_cmd_t;
                                          | ZIP_SOURCE_MAKE_COMMAND_BITMASK(ZIP_SOURCE_SEEK_WRITE) \
                                          | ZIP_SOURCE_MAKE_COMMAND_BITMASK(ZIP_SOURCE_TELL_WRITE) \
                                          | ZIP_SOURCE_MAKE_COMMAND_BITMASK(ZIP_SOURCE_REMOVE))
+#define ZIP_SOURCE_SUPPORTS_GET_BUFFER ZIP_SOURCE_MAKE_COMMAND_BITMASK(ZIP_SOURCE_GET_BUFFER)
 
 /* clang-format on */
 

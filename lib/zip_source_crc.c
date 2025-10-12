@@ -69,7 +69,9 @@ zip_source_crc_create(zip_source_t *src, int validate, zip_error_t *error) {
     ctx->validate = validate;
     ctx->crc_complete = 0;
     ctx->crc_position = 0;
+#if 0
     ctx->crc = (zip_uint32_t)crc32(0, NULL, 0);
+#endif
     ctx->size = 0;
 
     return zip_source_layered_create(src, crc_read, ctx, error);
@@ -107,10 +109,12 @@ crc_read(zip_source_t *src, void *_ctx, void *data, zip_uint64_t len, zip_source
                         return -1;
                     }
 
+#ifndef LIBZIP_MINIMAL
                     if ((st.valid & ZIP_STAT_CRC) && st.crc != ctx->crc) {
                         zip_error_set(&ctx->error, ZIP_ER_CRC, 0);
                         return -1;
                     }
+#endif
                     if ((st.valid & ZIP_STAT_SIZE) && st.size != ctx->size) {
                         /* We don't have the index here, but the caller should know which file they are reading from. */
                         zip_error_set(&ctx->error, ZIP_ER_INCONS, MAKE_DETAIL_WITH_INDEX(ZIP_ER_DETAIL_INVALID_FILE_LENGTH, MAX_DETAIL_INDEX));
@@ -125,7 +129,9 @@ crc_read(zip_source_t *src, void *_ctx, void *data, zip_uint64_t len, zip_source
             for (i = ctx->crc_position - ctx->position; i < (zip_uint64_t)n; i += nn) {
                 nn = ZIP_MIN(UINT_MAX, (zip_uint64_t)n - i);
 
+#ifndef LIBZIP_MINIMAL
                 ctx->crc = (zip_uint32_t)crc32(ctx->crc, (const Bytef *)data + i, (uInt)nn);
+#endif
                 ctx->crc_position += nn;
             }
         }
@@ -148,7 +154,9 @@ crc_read(zip_source_t *src, void *_ctx, void *data, zip_uint64_t len, zip_source
             /* TODO: Set comp_size, comp_method, encryption_method?
                     After all, this only works for uncompressed data. */
             st->size = ctx->size;
+#ifndef LIBZIP_MINIMAL
             st->crc = ctx->crc;
+#endif
             st->comp_size = ctx->size;
             st->comp_method = ZIP_CM_STORE;
             st->encryption_method = ZIP_EM_NONE;

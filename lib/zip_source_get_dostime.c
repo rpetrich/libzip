@@ -45,9 +45,11 @@ zip_source_get_dos_time(zip_source_t *src, zip_dostime_t *dos_time) {
         return -1;
     }
 
+#ifndef LIBZIP_MINIMAL
     if (src->write_state == ZIP_SOURCE_WRITE_REMOVED) {
         zip_error_set(&src->error, ZIP_ER_READ, ENOENT);
     }
+#endif
 
     if (zip_source_supports(src) & ZIP_SOURCE_MAKE_COMMAND_BITMASK(ZIP_SOURCE_GET_DOS_TIME)) {
         zip_int64_t n = _zip_source_call(src, dos_time, sizeof(*dos_time), ZIP_SOURCE_GET_DOS_TIME);

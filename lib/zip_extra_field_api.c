@@ -35,6 +35,7 @@
 #include "zipint.h"
 
 
+#ifndef LIBZIP_MINIMAL
 ZIP_EXTERN int
 zip_file_extra_field_delete(zip_t *za, zip_uint64_t idx, zip_uint16_t ef_idx, zip_flags_t flags) {
     zip_dirent_t *de;
@@ -101,6 +102,7 @@ zip_file_extra_field_delete_by_id(zip_t *za, zip_uint64_t idx, zip_uint16_t ef_i
     de->extra_fields = _zip_ef_delete_by_id(de->extra_fields, ef_id, ef_idx, flags);
     return 0;
 }
+#endif
 
 
 ZIP_EXTERN const zip_uint8_t *
@@ -221,6 +223,7 @@ zip_file_extra_fields_count_by_id(zip_t *za, zip_uint64_t idx, zip_uint16_t ef_i
 }
 
 
+#ifndef LIBZIP_MINIMAL
 ZIP_EXTERN int
 zip_file_extra_field_set(zip_t *za, zip_uint64_t idx, zip_uint16_t ef_id, zip_uint16_t ef_idx, const zip_uint8_t *data, zip_uint16_t len, zip_flags_t flags) {
     zip_dirent_t *de;
@@ -361,3 +364,4 @@ _zip_file_extra_field_prepare_for_change(zip_t *za, zip_uint64_t idx) {
 
     return 0;
 }
+#endif

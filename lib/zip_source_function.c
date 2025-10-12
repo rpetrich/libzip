@@ -86,7 +86,9 @@ _zip_source_new(zip_error_t *error) {
     src->cb.f = NULL;
     src->ud = NULL;
     src->open_count = 0;
+#ifndef LIBZIP_MINIMAL
     src->write_state = ZIP_SOURCE_WRITE_CLOSED;
+#endif
     src->source_closed = false;
     src->source_archive = NULL;
     src->refcount = 1;

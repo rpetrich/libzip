@@ -61,13 +61,18 @@ _zip_new(zip_error_t *error) {
     zip_error_init(&za->error);
     za->flags = za->ch_flags = 0;
     za->default_password = NULL;
-    za->comment_orig = za->comment_changes = NULL;
+    za->comment_orig = NULL;
+#ifndef LIBZIP_MINIMAL
+    za->za->comment_changes = NULL;
     za->comment_changed = 0;
+#endif
     za->nentry = za->nentry_alloc = 0;
     za->entry = NULL;
     za->nopen_source = za->nopen_source_alloc = 0;
     za->open_source = NULL;
+#ifndef LIBZIP_MINIMAL
     za->progress = NULL;
+#endif
     za->torrent_mtime = 0;
 
     return za;

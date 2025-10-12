@@ -49,7 +49,9 @@ zip_name_locate(zip_t *za, const char *fname, zip_flags_t flags) {
 zip_int64_t
 _zip_name_locate(zip_t *za, const char *fname, zip_flags_t flags, zip_error_t *error) {
     int (*cmp)(const char *, const char *);
+#ifndef LIBZIP_MINIMAL
     size_t fname_length;
+#endif
     zip_string_t *str = NULL;
     const char *fn, *p;
     zip_uint64_t i;
@@ -63,12 +65,14 @@ _zip_name_locate(zip_t *za, const char *fname, zip_flags_t flags, zip_error_t *e
         return -1;
     }
 
+#ifndef LIBZIP_MINIMAL
     fname_length = strlen(fname);
 
     if (fname_length > ZIP_UINT16_MAX) {
         zip_error_set(error, ZIP_ER_INVAL, 0);
         return -1;
     }
+#endif
 
     if ((flags & (ZIP_FL_ENC_UTF_8 | ZIP_FL_ENC_RAW)) == 0 && fname[0] != '\0') {
         if ((str = _zip_string_new((const zip_uint8_t *)fname, (zip_uint16_t)strlen(fname), flags, error)) == NULL) {
@@ -82,7 +86,11 @@ _zip_name_locate(zip_t *za, const char *fname, zip_flags_t flags, zip_error_t *e
 
     if (flags & (ZIP_FL_NOCASE | ZIP_FL_NODIR | ZIP_FL_ENC_RAW | ZIP_FL_ENC_STRICT)) {
         /* can't use hash table */
+#ifdef LIBZIP_MINIMAL
+        cmp = strcmp;
+#else
         cmp = (flags & ZIP_FL_NOCASE) ? strcasecmp : strcmp;
+#endif
 
         for (i = 0; i < za->nentry; i++) {
             fn = _zip_get_name(za, i, flags, error);

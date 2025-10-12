@@ -38,6 +38,7 @@
 
 #include "zipint.h"
 
+#ifndef LIBZIP_MINIMAL
 zip_uint32_t
 _zip_string_crc32(const zip_string_t *s) {
     zip_uint32_t crc;
@@ -49,6 +50,7 @@ _zip_string_crc32(const zip_string_t *s) {
 
     return crc;
 }
+#endif
 
 
 int
@@ -70,8 +72,9 @@ _zip_string_free(zip_string_t *s) {
     if (s == NULL)
         return;
 
-    free(s->raw);
+#ifndef LIBZIP_MINIMAL
     free(s->converted);
+#endif
     free(s);
 }
 
@@ -86,6 +89,7 @@ _zip_string_get(zip_string_t *string, zip_uint32_t *lenp, zip_flags_t flags, zip
         return empty;
     }
 
+#ifndef LIBZIP_MINIMAL
     if ((flags & ZIP_FL_ENC_RAW) == 0) {
         /* start guessing */
         if (string->encoding == ZIP_ENCODING_UNKNOWN) {
@@ -103,6 +107,7 @@ _zip_string_get(zip_string_t *string, zip_uint32_t *lenp, zip_flags_t flags, zip
             return string->converted;
         }
     }
+#endif
 
     if (lenp)
         *lenp = string->length;
@@ -110,7 +115,11 @@ _zip_string_get(zip_string_t *string, zip_uint32_t *lenp, zip_flags_t flags, zip
 }
 
 bool _zip_string_is_ascii(const zip_string_t *string) {
+#ifdef LIBZIP_MINIMAL
+    if (true) {
+#else
     if (string->encoding != ZIP_ENCODING_ASCII) {
+#endif
         zip_uint16_t i;
 
         for (i = 0; i < string->length; i++) {
@@ -136,11 +145,14 @@ _zip_string_length(const zip_string_t *s) {
 zip_string_t *
 _zip_string_new(const zip_uint8_t *raw, zip_uint16_t length, zip_flags_t flags, zip_error_t *error) {
     zip_string_t *s;
+#ifndef LIBZIP_MINIMAL
     zip_encoding_type_t expected_encoding;
+#endif
 
     if (length == 0)
         return NULL;
 
+#ifndef LIBZIP_MINIMAL
     switch (flags & ZIP_FL_ENCODING_ALL) {
     case ZIP_FL_ENC_GUESS:
         expected_encoding = ZIP_ENCODING_UNKNOWN;
@@ -155,20 +167,17 @@ _zip_string_new(const zip_uint8_t *raw, zip_uint16_t length, zip_flags_t flags, 
         zip_error_set(error, ZIP_ER_INVAL, 0);
         return NULL;
     }
+#endif
 
-    if ((s = (zip_string_t *)malloc(sizeof(*s))) == NULL) {
+    if ((s = (zip_string_t *)malloc(sizeof(*s) + length + 1)) == NULL) {
         zip_error_set(error, ZIP_ER_MEMORY, 0);
-        return NULL;
-    }
-
-    if ((s->raw = (zip_uint8_t *)malloc((size_t)length + 1)) == NULL) {
-        free(s);
         return NULL;
     }
 
     (void)memcpy_s(s->raw, length + 1, raw, length);
     s->raw[length] = '\0';
     s->length = length;
+#ifndef LIBZIP_MINIMAL
     s->encoding = ZIP_ENCODING_UNKNOWN;
     s->converted = NULL;
     s->converted_length = 0;
@@ -180,11 +189,13 @@ _zip_string_new(const zip_uint8_t *raw, zip_uint16_t length, zip_flags_t flags, 
             return NULL;
         }
     }
+#endif
 
     return s;
 }
 
 
+#ifndef LIBZIP_MINIMAL
 int
 _zip_string_write(zip_t *za, const zip_string_t *s) {
     if (s == NULL)
@@ -192,3 +203,4 @@ _zip_string_write(zip_t *za, const zip_string_t *s) {
 
     return _zip_write(za, s->raw, s->length);
 }
+#endif

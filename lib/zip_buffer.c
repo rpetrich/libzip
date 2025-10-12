@@ -48,10 +48,6 @@ _zip_buffer_free(zip_buffer_t *buffer) {
         return;
     }
 
-    if (buffer->free_data) {
-        free(buffer->data);
-    }
-
     free(buffer);
 }
 
@@ -151,7 +147,6 @@ _zip_buffer_read(zip_buffer_t *buffer, zip_uint8_t *data, zip_uint64_t length) {
 
 zip_buffer_t *
 _zip_buffer_new(zip_uint8_t *data, zip_uint64_t size) {
-    bool free_data = (data == NULL);
     zip_buffer_t *buffer;
 
 #if ZIP_UINT64_MAX > SIZE_MAX
@@ -160,44 +155,79 @@ _zip_buffer_new(zip_uint8_t *data, zip_uint64_t size) {
     }
 #endif
 
-    if (data == NULL) {
-        if ((data = (zip_uint8_t *)malloc((size_t)size)) == NULL) {
-            return NULL;
-        }
-    }
-
-    if ((buffer = (zip_buffer_t *)malloc(sizeof(*buffer))) == NULL) {
-        if (free_data) {
-            free(data);
-        }
+    size_t trailing_size = (data == NULL) ? (size_t)size : 0;
+    if ((buffer = (zip_buffer_t *)malloc(sizeof(*buffer) + trailing_size)) == NULL) {
         return NULL;
     }
 
     buffer->ok = true;
-    buffer->data = data;
+    buffer->data = (data == NULL) ? buffer->trailing_data : data;
     buffer->size = size;
     buffer->offset = 0;
-    buffer->free_data = free_data;
 
     return buffer;
+}
+
+
+void
+_zip_buffer_init(zip_uint8_t *data, zip_uint64_t size, zip_buffer_t *out_buffer) {
+    out_buffer->ok = true;
+    out_buffer->data = data;
+    out_buffer->size = size;
+    out_buffer->offset = 0;
 }
 
 
 zip_buffer_t *
 _zip_buffer_new_from_source(zip_source_t *src, zip_uint64_t size, zip_uint8_t *buf, zip_error_t *error) {
     zip_buffer_t *buffer;
+    bool should_read = false;
+
+    if (_zip_source_call(src, &buf, size, ZIP_SOURCE_GET_BUFFER) < 0) {
+        should_read = true;
+    }
 
     if ((buffer = _zip_buffer_new(buf, size)) == NULL) {
         zip_error_set(error, ZIP_ER_MEMORY, 0);
         return NULL;
     }
 
-    if (_zip_read(src, buffer->data, size, error) < 0) {
+    if (should_read && _zip_read(src, buffer->data, size, error) < 0) {
         _zip_buffer_free(buffer);
         return NULL;
     }
 
     return buffer;
+}
+
+
+int
+_zip_buffer_init_from_source(zip_source_t *src, zip_uint64_t size, zip_uint8_t *buf, zip_error_t *error, zip_buffer_t *out_buffer) {
+    if (_zip_source_call(src, &buf, size, ZIP_SOURCE_GET_BUFFER) < 0) {
+        if (_zip_read(src, buf, size, error) < 0) {
+            return -1;
+        }
+    }
+    if (buf == NULL) {
+        zip_error_set(error, ZIP_ER_MEMORY, 0);
+        return -1;
+    }
+    out_buffer->ok = true;
+    out_buffer->data = buf;
+    out_buffer->size = size;
+    out_buffer->offset = 0;
+    return 0;
+}
+
+
+zip_buffer_t *
+_zip_buffer_from_source(zip_source_t *src, zip_uint64_t size, zip_uint8_t *buf, zip_error_t *error, zip_buffer_t *out_buffer, bool *should_free) {
+    if (_zip_buffer_init_from_source(src, size, buf, error, out_buffer) >= 0) {
+        *should_free = false;
+        return out_buffer;
+    }
+    *should_free = true;
+    return _zip_buffer_new_from_source(src, size, buf, error);
 }
 
 

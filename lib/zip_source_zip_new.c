@@ -250,6 +250,11 @@ ZIP_EXTERN zip_source_t *zip_source_zip_file_create(zip_t *srcza, zip_uint64_t s
     /* creating a layered source calls zip_keep() on the lower layer, so we free it */
 
     if (needs_decrypt) {
+#ifdef LIBZIP_MINIMAL
+        zip_source_free(src);
+        zip_error_set(error, ZIP_ER_ENCRNOTSUPP, 0);
+        return NULL;
+#else
         zip_encryption_implementation enc_impl;
 
         if ((enc_impl = _zip_get_encryption_implementation(st.encryption_method, ZIP_CODEC_DECODE)) == NULL) {
@@ -265,22 +270,35 @@ ZIP_EXTERN zip_source_t *zip_source_zip_file_create(zip_t *srcza, zip_uint64_t s
         }
 
         src = s2;
+#endif
     }
     if (needs_decompress) {
+#ifdef LIBZIP_MINIMAL
+        zip_error_set(error, ZIP_ER_COMPRESSED_DATA, 0);
+        zip_source_free(src);
+        return NULL;
+#else
         s2 = zip_source_decompress(srcza, src, st.comp_method);
         if (s2 == NULL) {
             zip_source_free(src);
             return NULL;
         }
         src = s2;
+#endif
     }
     if (needs_crc) {
+#ifdef LIBZIP_MINIMAL
+        zip_error_set(error, ZIP_ER_CRC, 0);
+        zip_source_free(src);
+        return NULL;
+#else
         s2 = zip_source_crc_create(src, 1, error);
         if (s2 == NULL) {
             zip_source_free(src);
             return NULL;
         }
         src = s2;
+#endif
     }
 
     if (partial_data && (needs_decrypt || needs_decompress)) {

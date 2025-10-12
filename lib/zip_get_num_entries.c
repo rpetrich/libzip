@@ -37,16 +37,20 @@
 
 ZIP_EXTERN zip_int64_t
 zip_get_num_entries(zip_t *za, zip_flags_t flags) {
+#ifndef LIBZIP_MINIMAL
     zip_uint64_t n;
+#endif
 
     if (za == NULL)
         return -1;
 
+#ifndef LIBZIP_MINIMAL
     if (flags & ZIP_FL_UNCHANGED) {
         n = za->nentry;
         while (n > 0 && za->entry[n - 1].orig == NULL)
             --n;
         return (zip_int64_t)n;
     }
+#endif
     return (zip_int64_t)za->nentry;
 }

@@ -39,10 +39,12 @@ zip_source_open(zip_source_t *src) {
     if (src->source_closed) {
         return -1;
     }
+#ifndef LIBZIP_MINIMAL
     if (src->write_state == ZIP_SOURCE_WRITE_REMOVED) {
         zip_error_set(&src->error, ZIP_ER_DELETED, 0);
         return -1;
     }
+#endif
 
     if (ZIP_SOURCE_IS_OPEN_READING(src)) {
         if ((zip_source_supports(src) & ZIP_SOURCE_MAKE_COMMAND_BITMASK(ZIP_SOURCE_SEEK)) == 0) {

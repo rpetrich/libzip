@@ -36,16 +36,24 @@
 
 void
 _zip_entry_finalize(zip_entry_t *e) {
+#ifndef LIBZIP_MINIMAL
     _zip_unchange_data(e);
-    _zip_dirent_free(e->orig);
+#endif
+    _zip_dirent_finalize(&e->orig);
+#ifndef LIBZIP_MINIMAL
     _zip_dirent_free(e->changes);
+#endif
 }
 
 
 void
 _zip_entry_init(zip_entry_t *e) {
-    e->orig = NULL;
+   _zip_dirent_init(&e->orig);
+#ifndef LIBZIP_MINIMAL
     e->changes = NULL;
+#endif
     e->source = NULL;
+#ifndef LIBZIP_MINIMAL
     e->deleted = 0;
+#endif
 }
