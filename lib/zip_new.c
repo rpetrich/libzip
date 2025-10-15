@@ -61,7 +61,7 @@ _zip_new(zip_error_t *error) {
     zip_error_init(&za->error);
     za->flags = za->ch_flags = 0;
     za->default_password = NULL;
-    za->comment_orig = NULL;
+    za->comment_orig = (zip_string_t){0};
 #ifndef LIBZIP_MINIMAL
     za->za->comment_changes = NULL;
     za->comment_changed = 0;

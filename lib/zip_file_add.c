@@ -48,5 +48,5 @@ zip_file_add(zip_t *za, const char *name, zip_source_t *source, zip_flags_t flag
         return -1;
     }
 
-    return _zip_file_replace(za, ZIP_UINT64_MAX, name, source, flags);
+    return _zip_file_replace(za, ZIP_UINT64_MAX, name, strlen(name), source, flags);
 }

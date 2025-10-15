@@ -231,7 +231,8 @@ _zip_open(zip_source_t *src, unsigned int flags, zip_error_t *error) {
 
     if (ZIP_IS_TORRENTZIP(za)) {
         /* Torrentzip uses the archive comment to detect changes by tools that are not torrentzip aware. */
-        _zip_string_free(cdir->comment);
+        _zip_string_finalize(&cdir->comment);
+        cdir->comment = (zip_string_t){ 0 };
     }
     else {
         za->comment_orig = cdir->comment;
@@ -242,15 +243,7 @@ _zip_open(zip_source_t *src, unsigned int flags, zip_error_t *error) {
     _zip_hash_reserve_capacity(za->names, za->nentry, &za->error);
 
     for (idx = 0; idx < za->nentry; idx++) {
-        const zip_uint8_t *name = _zip_string_get(za->entry[idx].orig.filename, NULL, 0, error);
-        if (name == NULL) {
-            /* keep src so discard does not get rid of it */
-            zip_source_keep(src);
-            zip_discard(za);
-            return NULL;
-        }
-
-        if (_zip_hash_add(za->names, name, idx, ZIP_FL_UNCHANGED, &za->error) == false) {
+        if (_zip_hash_add(za->names, &za->entry[idx].orig.filename, idx, ZIP_FL_UNCHANGED, &za->error) == false) {
             if (za->error.zip_err != ZIP_ER_EXISTS || (flags & ZIP_CHECKCONS)) {
                 _zip_error_copy(error, &za->error);
                 /* keep src so discard does not get rid of it */
@@ -383,7 +376,7 @@ static bool _zip_read_cdir(zip_t *za, zip_buffer_t *buffer, zip_uint64_t buf_off
         }
 
         if (comment_len) {
-            if ((cd->comment = _zip_string_new(_zip_buffer_get(buffer, comment_len), comment_len, ZIP_FL_ENC_GUESS, error)) == NULL) {
+            if (!_zip_string_init(&cd->comment, _zip_buffer_get(buffer, comment_len), true, comment_len, ZIP_FL_ENC_GUESS, error)) {
                 _zip_cdir_free(cd);
                 return true;
             }
@@ -554,7 +547,7 @@ _zip_checkcons(zip_t *za, zip_cdir_t *cd, zip_error_t *error) {
             return -1;
         }
 
-        j = cd->entry[i].orig.offset + cd->entry[i].orig.comp_size + _zip_string_length(cd->entry[i].orig.filename) + LENTRYSIZE;
+        j = cd->entry[i].orig.offset + cd->entry[i].orig.comp_size + _zip_string_length(&cd->entry[i].orig.filename) + LENTRYSIZE;
         if (j > max)
             max = j;
         if (max > (zip_uint64_t)cd->offset) {
@@ -609,7 +602,7 @@ _zip_headercomp(const zip_dirent_t *central, const zip_dirent_t *local) {
 	   and global headers for the bitflags */
 	|| (central->bitflags != local->bitflags)
 #endif
-        || (central->comp_method != local->comp_method) || (central->last_mod.time != local->last_mod.time) || (central->last_mod.date != local->last_mod.date) || !_zip_string_equal(central->filename, local->filename))
+        || (central->comp_method != local->comp_method) || (central->last_mod.time != local->last_mod.time) || (central->last_mod.date != local->last_mod.date) || !_zip_string_equal(&central->filename, &local->filename))
         return -1;
 
     if ((central->crc != local->crc) || (central->comp_size != local->comp_size) || (central->uncomp_size != local->uncomp_size)) {

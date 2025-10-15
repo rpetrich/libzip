@@ -54,6 +54,7 @@ struct zip_hash_entry {
 #endif
     zip_int32_t current_index;
     zip_uint32_t hash_value;
+    zip_uint32_t name_length;
 };
 typedef struct zip_hash_entry zip_hash_entry_t;
 
@@ -66,19 +67,19 @@ struct zip_hash {
 
 /* compute hash of string, full 32 bit value */
 static zip_uint32_t
-hash_string(const zip_uint8_t *name) {
+hash_string(const zip_uint8_t *name, size_t len) {
     zip_uint64_t value = HASH_START;
 
     if (name == NULL) {
         return 0;
     }
 
-    while (*name != 0) {
-        if (*name == '/' && name[1] == '\0') {
-            break;
-        }
-        value = (zip_uint64_t)(((value * HASH_MULTIPLIER) + (zip_uint8_t)*name) % 0x100000000ul);
-        name++;
+    if (len > 0 && name[len - 1] == '/') {
+        len--;
+    }
+
+    for (size_t i = 0; i < (ssize_t)len; i++) {
+        value = (zip_uint64_t)(((value * HASH_MULTIPLIER) + (zip_uint8_t)name[i]) % 0x100000000ul);
     }
 
     return (zip_uint32_t)value;
@@ -124,7 +125,7 @@ hash_resize(zip_hash_t *hash, zip_uint32_t new_size, zip_error_t *error) {
 
 static zip_uint32_t
 size_for_capacity(zip_uint64_t capacity) {
-    double needed_size = capacity / HASH_MAX_FILL;
+    zip_uint64_t needed_size = (capacity * HASH_MAX_FILL_DENOMINATOR) / HASH_MAX_FILL_NUMERATOR;
     zip_uint32_t v;
 
     if (needed_size > ZIP_UINT32_MAX) {
@@ -185,7 +186,7 @@ _zip_hash_free(zip_hash_t *hash) {
 
 /* insert into hash, return error on existence or memory issues */
 bool
-_zip_hash_add(zip_hash_t *hash, const zip_uint8_t *name, zip_uint64_t index, zip_flags_t flags, zip_error_t *error) {
+_zip_hash_add(zip_hash_t *hash, zip_string_t *name, zip_uint64_t index, zip_flags_t flags, zip_error_t *error) {
     zip_uint32_t hash_value, table_index, table_mask;
     zip_hash_entry_t *entry;
 
@@ -199,15 +200,25 @@ _zip_hash_add(zip_hash_t *hash, const zip_uint8_t *name, zip_uint64_t index, zip
             return false;
         }
     }
+#ifdef LIBZIP_MINIMAL
+    const zip_uint8_t *name_str = name->raw;
+    size_t length = name->length;
+#else
+    zip_uint32_t length;
+    const zip_uint8_t *name_str = _zip_string_get(name, &length, flags, error);
+    if (name_str == NULL) {
+        return NULL;
+    }
+#endif
 
-    hash_value = hash_string(name);
+    hash_value = hash_string(name_str, length);
 
     table_mask = hash->table_size - 1;
     table_index = hash_value & table_mask;
     entry = &hash->table[table_index];
 
     while (entry->name != NULL) {
-        if (entry->hash_value == hash_value && _zip_name_cmp((const char *)name, (const char *)entry->name) == 0) {
+        if (entry->hash_value == hash_value && _zip_name_cmp((const char *)name_str, length, (const char *)entry->name, entry->name_length) == 0) {
 #ifdef LIBZIP_MINIMAL
             if (entry->current_index != -1) {
 #else
@@ -227,7 +238,8 @@ _zip_hash_add(zip_hash_t *hash, const zip_uint8_t *name, zip_uint64_t index, zip
     if (entry->name != NULL) {
         entry->current_index = (zip_int64_t)index;
     } else {
-        entry->name = name;
+        entry->name = name_str;
+        entry->name_length = length;
         entry->hash_value = hash_value;
 #ifndef LIBZIP_MINIMAL
         if (flags & ZIP_FL_UNCHANGED) {
@@ -239,7 +251,7 @@ _zip_hash_add(zip_hash_t *hash, const zip_uint8_t *name, zip_uint64_t index, zip
         entry->current_index = (zip_int64_t)index;
 
         hash->nentries++;
-        if (hash->nentries > hash->table_size * HASH_MAX_FILL && hash->table_size < HASH_MAX_SIZE) {
+        if (hash->nentries * HASH_MAX_FILL_DENOMINATOR > hash->table_size * HASH_MAX_FILL_NUMERATOR && hash->table_size < HASH_MAX_SIZE) {
             if (!hash_resize(hash, hash->table_size * 2, error)) {
                 return false;
             }
@@ -262,12 +274,12 @@ _zip_hash_delete(zip_hash_t *hash, const zip_uint8_t *name, zip_error_t *error) 
     }
 
     if (hash->nentries > 0) {
-        hash_value = hash_string(name);
+        hash_value = hash_string(name, strlen((const char *)name));
         mask = hash->table_size - 1;
         index = hash_value & mask;
         entry = &hash->table[index];
         while (entry->name != NULL) {
-            if (entry->hash_value == hash_value && _zip_name_cmp((const char *)name, (const char *)entry->name) == 0) {
+            if (entry->hash_value == hash_value && _zip_name_cmp((const char *)name, strlen((const char *)name), (const char *)entry->name, entry->name_length) == 0) {
 #ifndef LIBZIP_MINIMAL
                 if (entry -> orig_index == -1) {
                     // TODO: support deleting
@@ -290,7 +302,7 @@ _zip_hash_delete(zip_hash_t *hash, const zip_uint8_t *name, zip_error_t *error) 
 
 /* find value for entry in hash, -1 if not found */
 zip_int64_t
-_zip_hash_lookup(zip_hash_t *hash, const zip_uint8_t *name, zip_flags_t flags, zip_error_t *error) {
+_zip_hash_lookup(zip_hash_t *hash, const zip_uint8_t *name, size_t length, zip_flags_t flags, zip_error_t *error) {
     zip_uint32_t hash_value, index, mask;
     zip_hash_entry_t *entry;
 
@@ -300,12 +312,12 @@ _zip_hash_lookup(zip_hash_t *hash, const zip_uint8_t *name, zip_flags_t flags, z
     }
 
     if (hash->nentries > 0) {
-        hash_value = hash_string(name);
+        hash_value = hash_string(name, length);
         mask = (hash->table_size - 1);
         index = hash_value & mask;
         entry = &hash->table[index];
         while (entry->name != NULL) {
-            if (entry->hash_value == hash_value && _zip_name_cmp((const char *)name, (const char *)entry->name) == 0) {
+            if (entry->hash_value == hash_value && _zip_name_cmp((const char *)name, strlen((const char *)name), (const char *)entry->name, entry->name_length) == 0) {
 #ifdef LIBZIP_MINIMAL
                 if (entry->current_index != -1) {
                     return entry->current_index;

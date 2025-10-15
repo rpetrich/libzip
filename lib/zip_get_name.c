@@ -51,8 +51,18 @@ _zip_get_name(zip_t *za, zip_uint64_t idx, zip_flags_t flags, zip_error_t *error
     if ((de = _zip_get_dirent(za, idx, flags, error)) == NULL)
         return NULL;
 
-    if ((str = _zip_string_get(de->filename, NULL, flags, error)) == NULL)
+    if ((str = _zip_string_get(&de->filename, NULL, flags, error)) == NULL)
         return NULL;
 
     return (const char *)str;
+}
+
+const char *_zip_get_name_raw(zip_t *za, zip_uint64_t idx, zip_flags_t flags, size_t *length, zip_error_t *error) {
+    zip_dirent_t *de;
+
+    if ((de = _zip_get_dirent(za, idx, flags, error)) == NULL)
+        return NULL;
+
+    *length = de->filename.length;
+    return (const char *)de->filename.raw;
 }

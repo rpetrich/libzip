@@ -111,47 +111,50 @@ _zip_read_data(zip_buffer_t *buffer, zip_source_t *src, size_t length, bool nulp
 }
 
 
-zip_string_t *
-_zip_read_string(zip_buffer_t *buffer, zip_source_t *src, zip_uint16_t len, bool nulp, zip_error_t *error) {
+bool
+_zip_read_string(zip_string_t *s, zip_buffer_t *buffer, zip_source_t *src, zip_uint16_t len, bool nulp, zip_error_t *error) {
     zip_uint8_t *raw;
-    zip_string_t *s;
 
 #ifdef LIBZIP_MINIMAL
-    if ((s = (zip_string_t *)malloc(sizeof(*s) + len + nulp)) == NULL) {
+    if (buffer) {
+        raw = _zip_buffer_get(buffer, len);
+
+        if (raw == NULL) {
+            zip_error_set(error, ZIP_ER_MEMORY, 0);
+            return NULL;
+        }
+        s->raw = raw;
+        s->owns_raw = false;
+        s->length = len;
+
+        return true;
+    }
+
+    if ((raw = malloc(len + nulp)) == NULL) {
         zip_error_set(error, ZIP_ER_MEMORY, 0);
         return NULL;
     }
 
-    s->length = len;
-    raw = s->raw;
-    
-    if (buffer) {
-        zip_uint8_t *data = _zip_buffer_get(buffer, len);
-
-        if (data == NULL) {
-            free(s);
-            zip_error_set(error, ZIP_ER_MEMORY, 0);
-            return NULL;
-        }
-        (void)memcpy_s(raw, len, data, len);
-    } else {
-        if (_zip_read(src, raw, len, error) < 0) {
-            free(s);
-            return NULL;
-        }
+    if (_zip_read(src, raw, len, error) < 0) {
+        free(raw);
+        return NULL;
     }
 
     if (nulp) {
         replace_nuls(raw, len);
     }
-    return s;
+    s->raw = raw;
+    s->owns_raw = true;
+    s->length = len;
+    
+    return true;
 #else
     if ((raw = _zip_read_data(buffer, src, len, nulp, error)) == NULL)
         return NULL;
 
-    s = _zip_string_new(raw, len, ZIP_FL_ENC_GUESS, error);
+    bool result = _zip_string_init(s, raw, true, len, ZIP_FL_ENC_GUESS, error);
     free(raw);
-    return s;
+    return result;
 #endif
 }
 

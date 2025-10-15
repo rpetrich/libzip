@@ -75,7 +75,7 @@ zip_dir_add(zip_t *za, const char *name, zip_flags_t flags) {
         return -1;
     }
 
-    idx = _zip_file_replace(za, ZIP_UINT64_MAX, s ? s : name, source, flags);
+    idx = _zip_file_replace(za, ZIP_UINT64_MAX, s ? s : name, s ? len + 1 : len, source, flags);
 
     free(s);
 

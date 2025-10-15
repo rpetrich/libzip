@@ -41,7 +41,7 @@
 
 #include "zipint.h"
 
-static zip_string_t *_zip_dirent_process_ef_utf_8(const zip_dirent_t *de, zip_uint16_t id, zip_string_t *str, bool check_consistency);
+static bool _zip_dirent_process_ef_utf_8(const zip_dirent_t *de, zip_uint16_t id, zip_string_t *str, bool check_consistency);
 static zip_extra_field_t *_zip_ef_utf8(zip_uint16_t, zip_string_t *, zip_error_t *);
 static bool _zip_dirent_process_winzip_aes(zip_dirent_t *de, zip_error_t *error);
 
@@ -57,7 +57,7 @@ _zip_cdir_free(zip_cdir_t *cd) {
     for (i = 0; i < cd->nentry; i++)
         _zip_entry_finalize(cd->entry + i);
     free(cd->entry);
-    _zip_string_free(cd->comment);
+    _zip_string_finalize(&cd->comment);
     free(cd);
 }
 
@@ -74,7 +74,7 @@ _zip_cdir_new(zip_error_t *error) {
     cd->entry = NULL;
     cd->nentry = cd->nentry_alloc = 0;
     cd->size = cd->offset = 0;
-    cd->comment = NULL;
+    cd->comment = (zip_string_t){0};
     cd->is_zip64 = false;
 
     return cd;
@@ -235,16 +235,16 @@ _zip_dirent_clone(const zip_dirent_t *sde) {
 void
 _zip_dirent_finalize(zip_dirent_t *zde) {
     if (!zde->cloned || zde->changed & ZIP_DIRENT_FILENAME) {
-        _zip_string_free(zde->filename);
-        zde->filename = NULL;
+        _zip_string_finalize(&zde->filename);
+        zde->filename = (zip_string_t){0};
     }
     if (!zde->cloned || zde->changed & ZIP_DIRENT_EXTRA_FIELD) {
         _zip_ef_free(zde->extra_fields);
         zde->extra_fields = NULL;
     }
     if (!zde->cloned || zde->changed & ZIP_DIRENT_COMMENT) {
-        _zip_string_free(zde->comment);
-        zde->comment = NULL;
+        _zip_string_finalize(&zde->comment);
+        zde->comment = (zip_string_t){0};
     }
     if (!zde->cloned || zde->changed & ZIP_DIRENT_PASSWORD) {
         if (zde->password) {
@@ -332,9 +332,9 @@ _zip_dirent_init(zip_dirent_t *de) {
     de->crc = 0;
     de->comp_size = 0;
     de->uncomp_size = 0;
-    de->filename = NULL;
+    de->filename = (zip_string_t){0};
     de->extra_fields = NULL;
-    de->comment = NULL;
+    de->comment = (zip_string_t){0};
     de->disk_number = 0;
     de->int_attrib = 0;
     de->ext_attrib = ZIP_EXT_ATTRIB_DEFAULT;
@@ -381,7 +381,6 @@ _zip_dirent_read(zip_dirent_t *zde, zip_source_t *src, zip_buffer_t *buffer, boo
     zip_uint8_t buf[CDENTRYSIZE];
     zip_uint32_t size, variable_size;
     zip_uint16_t filename_len, comment_len, ef_len;
-    zip_string_t *utf8_string;
     bool is_zip64 = false;
 
     zip_buffer_t inline_buffer;
@@ -469,9 +468,9 @@ _zip_dirent_read(zip_dirent_t *zde, zip_source_t *src, zip_buffer_t *buffer, boo
         zde->encryption_method = ZIP_EM_NONE;
     }
 
-    zde->filename = NULL;
+    zde->filename = (zip_string_t){0};
     zde->extra_fields = NULL;
-    zde->comment = NULL;
+    zde->comment = (zip_string_t){0};
 
     variable_size = (zip_uint32_t)filename_len + (zip_uint32_t)ef_len + (zip_uint32_t)comment_len;
 
@@ -492,8 +491,7 @@ _zip_dirent_read(zip_dirent_t *zde, zip_source_t *src, zip_buffer_t *buffer, boo
     }
 
     if (filename_len) {
-        zde->filename = _zip_read_string(buffer, src, filename_len, 1, error);
-        if (zde->filename == NULL) {
+        if (!_zip_read_string(&zde->filename, buffer, src, filename_len, 1, error)) {
             if (zip_error_code_zip(error) == ZIP_ER_EOF) {
                 zip_error_set(error, ZIP_ER_INCONS, ZIP_ER_DETAIL_VARIABLE_SIZE_OVERFLOW);
             }
@@ -558,23 +556,22 @@ _zip_dirent_read(zip_dirent_t *zde, zip_source_t *src, zip_buffer_t *buffer, boo
     }
 #endif
 
-    if ((utf8_string = _zip_dirent_process_ef_utf_8(zde, ZIP_EF_UTF_8_NAME, zde->filename, check_consistency)) == NULL && zde->filename != NULL) {
+    if (!_zip_dirent_process_ef_utf_8(zde, ZIP_EF_UTF_8_NAME, &zde->filename, check_consistency)) {
         zip_error_set(error, ZIP_ER_INCONS, ZIP_ER_DETAIL_UTF8_FILENAME_MISMATCH);
         if (free_buffer) {
             _zip_buffer_free(buffer);
         }
         return -1;
     }
-    zde->filename = utf8_string;
+
     if (!local) {
-        if ((utf8_string = _zip_dirent_process_ef_utf_8(zde, ZIP_EF_UTF_8_COMMENT, zde->comment, check_consistency)) == NULL && zde->comment != NULL) {
+        if (!_zip_dirent_process_ef_utf_8(zde, ZIP_EF_UTF_8_COMMENT, &zde->comment, check_consistency)) {
             zip_error_set(error, ZIP_ER_INCONS, ZIP_ER_DETAIL_UTF8_COMMENT_MISMATCH);
             if (free_buffer) {
                 _zip_buffer_free(buffer);
             }
             return -1;
         }
-        zde->comment = utf8_string;
     }
 
     /* Zip64 */
@@ -710,7 +707,7 @@ zip_dirent_process_ef_zip64(zip_dirent_t *zde, const zip_uint8_t *ef, zip_uint64
 }
 
 
-static zip_string_t *
+static bool
 _zip_dirent_process_ef_utf_8(const zip_dirent_t *de, zip_uint16_t id, zip_string_t *str, bool check_consistency) {
     zip_uint16_t ef_len;
     zip_uint32_t ef_crc;
@@ -719,11 +716,11 @@ _zip_dirent_process_ef_utf_8(const zip_dirent_t *de, zip_uint16_t id, zip_string
     const zip_uint8_t *ef = _zip_ef_get_by_id(de->extra_fields, &ef_len, id, 0, ZIP_EF_BOTH, NULL);
 
     if (ef == NULL || ef_len < 5 || ef[0] != 1) {
-        return str;
+        return true;
     }
 
     if ((buffer = _zip_buffer_new((zip_uint8_t *)ef, ef_len)) == NULL) {
-        return str;
+        return true;
     }
 
     _zip_buffer_get_8(buffer);
@@ -736,25 +733,30 @@ _zip_dirent_process_ef_utf_8(const zip_dirent_t *de, zip_uint16_t id, zip_string
     if (_zip_string_crc32(str) == ef_crc) {
 #endif
         zip_uint16_t len = (zip_uint16_t)_zip_buffer_left(buffer);
-        zip_string_t *ef_str = _zip_string_new(_zip_buffer_get(buffer, len), len, ZIP_FL_ENC_UTF_8, NULL);
+        zip_uint8_t *data = _zip_buffer_get(buffer, len);
+        if (data != NULL) {
+            zip_string_t ef_str;
+            if (!_zip_string_init(&ef_str, data, true, len, ZIP_FL_ENC_UTF_8, NULL)) {
+                _zip_buffer_free(buffer);
+                return false;
+            }
 
-        if (ef_str != NULL) {
             if (check_consistency) {
-                if (!_zip_string_equal(str, ef_str) && _zip_string_is_ascii(ef_str)) {
-                    _zip_string_free(ef_str);
+                if (!_zip_string_equal(str, &ef_str) && _zip_string_is_ascii(&ef_str)) {
+                    _zip_string_finalize(&ef_str);
                     _zip_buffer_free(buffer);
-                    return NULL;
+                    return false;
                 }
             }
 
-            _zip_string_free(str);
-            str = ef_str;
+            _zip_string_finalize(str);
+            *str = ef_str;
         }
     }
 
     _zip_buffer_free(buffer);
 
-    return str;
+    return true;
 }
 
 
@@ -897,20 +899,20 @@ _zip_dirent_write(zip_t *za, zip_dirent_t *de, zip_flags_t flags) {
 
     ef = NULL;
 
-    name_enc = _zip_guess_encoding(de->filename, ZIP_ENCODING_UNKNOWN);
-    com_enc = _zip_guess_encoding(de->comment, ZIP_ENCODING_UNKNOWN);
+    name_enc = _zip_guess_encoding(&de->filename, ZIP_ENCODING_UNKNOWN);
+    com_enc = _zip_guess_encoding(&de->comment, ZIP_ENCODING_UNKNOWN);
 
     if ((name_enc == ZIP_ENCODING_UTF8_KNOWN && com_enc == ZIP_ENCODING_ASCII) || (name_enc == ZIP_ENCODING_ASCII && com_enc == ZIP_ENCODING_UTF8_KNOWN) || (name_enc == ZIP_ENCODING_UTF8_KNOWN && com_enc == ZIP_ENCODING_UTF8_KNOWN))
         de->bitflags |= ZIP_GPBF_ENCODING_UTF_8;
     else {
         de->bitflags &= (zip_uint16_t)~ZIP_GPBF_ENCODING_UTF_8;
         if (name_enc == ZIP_ENCODING_UTF8_KNOWN) {
-            ef = _zip_ef_utf8(ZIP_EF_UTF_8_NAME, de->filename, &za->error);
+            ef = _zip_ef_utf8(ZIP_EF_UTF_8_NAME, &de->filename, &za->error);
             if (ef == NULL)
                 return -1;
         }
         if ((flags & ZIP_FL_LOCAL) == 0 && com_enc == ZIP_ENCODING_UTF8_KNOWN) {
-            zip_extra_field_t *ef2 = _zip_ef_utf8(ZIP_EF_UTF_8_COMMENT, de->comment, &za->error);
+            zip_extra_field_t *ef2 = _zip_ef_utf8(ZIP_EF_UTF_8_COMMENT, &de->comment, &za->error);
             if (ef2 == NULL) {
                 _zip_ef_free(ef);
                 return -1;
@@ -1063,7 +1065,7 @@ _zip_dirent_write(zip_t *za, zip_dirent_t *de, zip_flags_t flags) {
         }
     }
 
-    _zip_buffer_put_16(buffer, _zip_string_length(de->filename));
+    _zip_buffer_put_16(buffer, _zip_string_length(&de->filename));
     ef_total_size = (zip_uint32_t)_zip_ef_size(ef, ZIP_EF_BOTH);
     if (!ZIP_WANT_TORRENTZIP(za)) {
         /* TODO: check for overflow */
@@ -1072,7 +1074,7 @@ _zip_dirent_write(zip_t *za, zip_dirent_t *de, zip_flags_t flags) {
     _zip_buffer_put_16(buffer, (zip_uint16_t)ef_total_size);
 
     if ((flags & ZIP_FL_LOCAL) == 0) {
-        _zip_buffer_put_16(buffer, ZIP_WANT_TORRENTZIP(za) ? 0 : _zip_string_length(de->comment));
+        _zip_buffer_put_16(buffer, ZIP_WANT_TORRENTZIP(za) ? 0 : _zip_string_length(&de->comment));
         _zip_buffer_put_16(buffer, (zip_uint16_t)de->disk_number);
         _zip_buffer_put_16(buffer, de->int_attrib);
         _zip_buffer_put_32(buffer, de->ext_attrib);
@@ -1097,8 +1099,8 @@ _zip_dirent_write(zip_t *za, zip_dirent_t *de, zip_flags_t flags) {
 
     _zip_buffer_free(buffer);
 
-    if (de->filename) {
-        if (_zip_string_write(za, de->filename) < 0) {
+    if (de->filename.raw != NULL) {
+        if (_zip_string_write(za, &de->filename) < 0) {
             _zip_ef_free(ef);
             return -1;
         }
@@ -1118,8 +1120,8 @@ _zip_dirent_write(zip_t *za, zip_dirent_t *de, zip_flags_t flags) {
     }
 
     if ((flags & ZIP_FL_LOCAL) == 0 && !ZIP_WANT_TORRENTZIP(za)) {
-        if (de->comment) {
-            if (_zip_string_write(za, de->comment) < 0) {
+        if (de->comment.raw != NULL) {
+            if (_zip_string_write(za, &de->comment) < 0) {
                 return -1;
             }
         }
@@ -1282,7 +1284,7 @@ _zip_dirent_apply_attributes(zip_dirent_t *de, zip_file_attributes_t *attributes
     else if (de->comp_method == ZIP_CM_DEFLATE || de->encryption_method == ZIP_EM_TRAD_PKWARE) {
         version_needed = 20;
     }
-    else if ((length = _zip_string_length(de->filename)) > 0 && de->filename->raw[length - 1] == '/') {
+    else if ((length = _zip_string_length(&de->filename)) > 0 && de->filename.raw[length - 1] == '/') {
         version_needed = 20;
     }
     else {

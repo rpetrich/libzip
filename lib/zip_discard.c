@@ -54,9 +54,9 @@ zip_discard(zip_t *za) {
     }
 
     free(za->default_password);
-    _zip_string_free(za->comment_orig);
+    _zip_string_finalize(&za->comment_orig);
 #ifndef LIBZIP_MINIMAL
-    _zip_string_free(za->comment_changes);
+    _zip_string_finalize(&za->comment_changes);
 #endif
 
     _zip_hash_free(za->names);

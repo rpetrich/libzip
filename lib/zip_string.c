@@ -68,14 +68,16 @@ _zip_string_equal(const zip_string_t *a, const zip_string_t *b) {
 
 
 void
-_zip_string_free(zip_string_t *s) {
+_zip_string_finalize(zip_string_t *s) {
     if (s == NULL)
         return;
 
+    if (s->owns_raw) {
+        free(s->raw);
+    }
 #ifndef LIBZIP_MINIMAL
     free(s->converted);
 #endif
-    free(s);
 }
 
 
@@ -111,6 +113,17 @@ _zip_string_get(zip_string_t *string, zip_uint32_t *lenp, zip_flags_t flags, zip
 
     if (lenp)
         *lenp = string->length;
+    if (!string->owns_raw) {
+        uint8_t *copied = malloc(string->length + 1);
+        if (copied == NULL) {
+            zip_error_set(error, ZIP_ER_MEMORY, 0);
+            return NULL;
+        }
+        memcpy(copied, string->raw, string->length);
+        copied[string->length] = '\0';
+        string->raw = copied;
+        string->owns_raw = true;
+    }
     return string->raw;
 }
 
@@ -142,17 +155,10 @@ _zip_string_length(const zip_string_t *s) {
 }
 
 
-zip_string_t *
-_zip_string_new(const zip_uint8_t *raw, zip_uint16_t length, zip_flags_t flags, zip_error_t *error) {
-    zip_string_t *s;
+bool
+_zip_string_init(zip_string_t *s, const zip_uint8_t *raw, bool copy_raw, zip_uint16_t length, zip_flags_t flags, zip_error_t *error) {
 #ifndef LIBZIP_MINIMAL
     zip_encoding_type_t expected_encoding;
-#endif
-
-    if (length == 0)
-        return NULL;
-
-#ifndef LIBZIP_MINIMAL
     switch (flags & ZIP_FL_ENCODING_ALL) {
     case ZIP_FL_ENC_GUESS:
         expected_encoding = ZIP_ENCODING_UNKNOWN;
@@ -169,13 +175,33 @@ _zip_string_new(const zip_uint8_t *raw, zip_uint16_t length, zip_flags_t flags, 
     }
 #endif
 
-    if ((s = (zip_string_t *)malloc(sizeof(*s) + length + 1)) == NULL) {
-        zip_error_set(error, ZIP_ER_MEMORY, 0);
-        return NULL;
+    if (length == 0) {
+        s->length = 0;
+        s->raw = NULL;
+        s->owns_raw = true;
+#ifndef LIBZIP_MINIMAL
+        s->encoding = expected_encoding;
+        s->converted = NULL;
+        s->converted_length = 0;
+#endif
+        return true;
     }
 
-    (void)memcpy_s(s->raw, length + 1, raw, length);
-    s->raw[length] = '\0';
+    if (copy_raw) {
+        zip_uint8_t *new_raw = malloc(length + 1);
+        if (raw == NULL) {
+            zip_error_set(error, ZIP_ER_MEMORY, 0);
+            return false;
+        }
+
+        (void)memcpy_s(new_raw, length, raw, length);
+        new_raw[length] = '\0';
+        s->raw = new_raw;
+        s->owns_raw = true;
+    } else {
+        s->raw = (zip_uint8_t *)raw;
+        s->owns_raw = false;
+    }
     s->length = length;
 #ifndef LIBZIP_MINIMAL
     s->encoding = ZIP_ENCODING_UNKNOWN;
@@ -184,14 +210,14 @@ _zip_string_new(const zip_uint8_t *raw, zip_uint16_t length, zip_flags_t flags, 
 
     if (expected_encoding != ZIP_ENCODING_UNKNOWN) {
         if (_zip_guess_encoding(s, expected_encoding) == ZIP_ENCODING_ERROR) {
-            _zip_string_free(s);
+            _zip_string_finalize(s);
             zip_error_set(error, ZIP_ER_INVAL, 0);
-            return NULL;
+            return false;
         }
     }
 #endif
 
-    return s;
+    return true;
 }
 
 

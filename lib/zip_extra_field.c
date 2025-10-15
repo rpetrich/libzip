@@ -374,16 +374,24 @@ _zip_read_local_ef(zip_t *za, zip_uint64_t idx) {
             return -1;
         }
 
-        ef_raw = _zip_read_data(NULL, za->src, ef_len, 0, &za->error);
+        bool should_free = _zip_source_call(za->src, &ef_raw, ef_len, ZIP_SOURCE_GET_BUFFER) < 0;
+        if (should_free) {
+            ef_raw = _zip_read_data(NULL, za->src, ef_len, 0, &za->error);
 
-        if (ef_raw == NULL)
-            return -1;
+            if (ef_raw == NULL)
+                return -1;
+        }
+
 
         if (!_zip_ef_parse(ef_raw, ef_len, ZIP_EF_LOCAL, &ef, &za->error)) {
-            free(ef_raw);
+            if (should_free) {
+                free(ef_raw);
+            }
             return -1;
         }
-        free(ef_raw);
+        if (should_free) {
+            free(ef_raw);
+        }
 
         if (ef) {
             ef = _zip_ef_remove_internal(ef);

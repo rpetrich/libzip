@@ -42,37 +42,39 @@
 
 ZIP_EXTERN zip_int64_t
 zip_name_locate(zip_t *za, const char *fname, zip_flags_t flags) {
-    return _zip_name_locate(za, fname, flags, &za->error);
-}
-
-static inline bool at_terminator(const char *s)
-{
-    return *s == '\0' || (*s == '/' && s[1] == '\0');
+    return _zip_name_locate(za, fname, fname != NULL ? strlen(fname) : 0, flags, &za->error);
 }
 
 
-int _zip_name_cmp(const char *l, const char *r)
+int _zip_name_cmp(const char *a, size_t a_len, const char *b, size_t b_len)
 {
-    while (__builtin_expect(!!(*l && (*l == *r)), 1)) {
-        ++l;
-        ++r;
-        if (at_terminator(l) && at_terminator(r)) {
-            return 0;
-        }
+    if (a_len != 0 && a[a_len - 1] == '/') {
+        a_len--;
     }
-    return *(const unsigned char *)l - *(const unsigned char *)r;
+    if (b_len != 0 && b[b_len - 1] == '/') {
+        b_len--;
+    }
+    if (a_len == b_len) {
+        return memcmp(a, b, a_len);
+    }
+    if (a_len < b_len) {
+        int result = memcmp(a, b, a_len);
+        return result == 0 ? 0 - b[a_len] : result;
+    }
+    int result = memcmp(a, b, b_len);
+    return result == 0 ? a[b_len] : result;
 }
 
 
 zip_int64_t
-_zip_name_locate(zip_t *za, const char *fname, zip_flags_t flags, zip_error_t *error) {
-    int (*cmp)(const char *, const char *);
+_zip_name_locate(zip_t *za, const char *fname, zip_uint32_t len, zip_flags_t flags, zip_error_t *error) {
 #ifndef LIBZIP_MINIMAL
+    int (*cmp)(const char *, size_t, const char *, size_t);
     size_t fname_length;
-#endif
-    zip_string_t *str = NULL;
     const char *fn, *p;
     zip_uint64_t i;
+#endif
+    zip_string_t str = {0};
 
     if (za == NULL) {
         return -1;
@@ -93,22 +95,19 @@ _zip_name_locate(zip_t *za, const char *fname, zip_flags_t flags, zip_error_t *e
 #endif
 
     if ((flags & (ZIP_FL_ENC_UTF_8 | ZIP_FL_ENC_RAW)) == 0 && fname[0] != '\0') {
-        if ((str = _zip_string_new((const zip_uint8_t *)fname, (zip_uint16_t)strlen(fname), flags, error)) == NULL) {
+        if (!_zip_string_init(&str, (const zip_uint8_t *)fname, true, (zip_uint16_t)strlen(fname), flags, error)) {
             return -1;
         }
-        if ((fname = (const char *)_zip_string_get(str, NULL, 0, error)) == NULL) {
-            _zip_string_free(str);
+        if ((fname = (const char *)_zip_string_get(&str, &len, 0, error)) == NULL) {
+            _zip_string_finalize(&str);
             return -1;
         }
     }
 
+#ifndef LIBZIP_MINIMAL
     if (flags & (ZIP_FL_NOCASE | ZIP_FL_NODIR | ZIP_FL_ENC_RAW | ZIP_FL_ENC_STRICT)) {
         /* can't use hash table */
-#ifdef LIBZIP_MINIMAL
-        cmp = _zip_name_cmp;
-#else
         cmp = (flags & ZIP_FL_NOCASE) ? strcasecmp : _zip_name_cmp;
-#endif
 
         for (i = 0; i < za->nentry; i++) {
             fn = _zip_get_name(za, i, flags, error);
@@ -123,20 +122,23 @@ _zip_name_locate(zip_t *za, const char *fname, zip_flags_t flags, zip_error_t *e
                     fn = p + 1;
             }
 
-            if (cmp(fname, fn) == 0) {
+            if (cmp(fname, len, fn, strlen(fn)) == 0) {
                 _zip_error_clear(error);
-                _zip_string_free(str);
+                _zip_string_finalize(&str);
                 return (zip_int64_t)i;
             }
         }
 
         zip_error_set(error, ZIP_ER_NOENT, 0);
-        _zip_string_free(str);
+        _zip_string_finalize(&str);
         return -1;
     }
     else {
-        zip_int64_t ret = _zip_hash_lookup(za->names, (const zip_uint8_t *)fname, flags, error);
-        _zip_string_free(str);
+#endif
+        zip_int64_t ret = _zip_hash_lookup(za->names, (const zip_uint8_t *)fname, len, flags, error);
+        _zip_string_finalize(&str);
         return ret;
+#ifndef LIBZIP_MINIMAL
     }
+#endif
 }

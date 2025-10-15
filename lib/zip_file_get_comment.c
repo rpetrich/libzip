@@ -45,7 +45,7 @@ zip_file_get_comment(zip_t *za, zip_uint64_t idx, zip_uint32_t *lenp, zip_flags_
     if ((de = _zip_get_dirent(za, idx, flags, NULL)) == NULL)
         return NULL;
 
-    if ((str = _zip_string_get(de->comment, &len, flags, &za->error)) == NULL)
+    if ((str = _zip_string_get(&de->comment, &len, flags, &za->error)) == NULL)
         return NULL;
 
     if (lenp)

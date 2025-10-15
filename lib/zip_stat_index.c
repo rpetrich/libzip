@@ -37,7 +37,9 @@
 
 ZIP_EXTERN int
 zip_stat_index(zip_t *za, zip_uint64_t index, zip_flags_t flags, zip_stat_t *st) {
+#ifndef LIBZIP_MINIMAL
     const char *name;
+#endif
     zip_dirent_t *de;
     zip_entry_t *entry;
 
@@ -45,9 +47,11 @@ zip_stat_index(zip_t *za, zip_uint64_t index, zip_flags_t flags, zip_stat_t *st)
         return -1;
     }
 
+#ifndef LIBZIP_MINIMAL
     if ((name = zip_get_name(za, index, flags)) == NULL) {
         return -1;
     }
+#endif
 
     entry = za->entry + index;
 
@@ -112,8 +116,12 @@ zip_stat_index(zip_t *za, zip_uint64_t index, zip_flags_t flags, zip_stat_t *st)
     }
 
     st->index = index;
+#ifdef LIBZIP_MINIMAL
+    st->valid |= ZIP_STAT_INDEX;
+#else
     st->name = name;
     st->valid |= ZIP_STAT_INDEX | ZIP_STAT_NAME;
+#endif
 
     return 0;
 }

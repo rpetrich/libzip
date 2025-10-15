@@ -287,6 +287,19 @@ typedef struct zip_buffer zip_buffer_t;
 typedef struct zip_hash zip_hash_t;
 typedef struct zip_progress zip_progress_t;
 
+/* file or archive comment, or filename */
+
+struct zip_string {
+    zip_uint16_t length;             /* length of raw string */
+    bool owns_raw;
+    zip_uint8_t *raw;                /* raw string */
+#ifndef LIBZIP_MINIMAL
+    enum zip_encoding_type encoding; /* autorecognized encoding */
+    zip_uint8_t *converted;          /* autoconverted string */
+    zip_uint32_t converted_length;   /* length of converted */
+#endif
+};
+
 /* zip archive, part of API */
 
 struct zip {
@@ -299,9 +312,9 @@ struct zip {
 
     char *default_password; /* password used when no other supplied */
 
-    zip_string_t *comment_orig;    /* archive comment */
+    zip_string_t comment_orig;    /* archive comment */
 #ifndef LIBZIP_MINIMAL
-    zip_string_t *comment_changes; /* changed archive comment */
+    zip_string_t comment_changes; /* changed archive comment */
     bool comment_changed;          /* whether archive comment was changed */
 #endif
 
@@ -363,9 +376,9 @@ struct zip_dirent {
     zip_uint32_t crc;                /* (cl) CRC-32 of uncompressed data */
     zip_uint64_t comp_size;          /* (cl) size of compressed data */
     zip_uint64_t uncomp_size;        /* (cl) size of uncompressed data */
-    zip_string_t *filename;          /* (cl) file name (NUL-terminated) */
+    zip_string_t filename;          /* (cl) file name (NUL-terminated) */
     zip_extra_field_t *extra_fields; /* (cl) extra fields, parsed */
-    zip_string_t *comment;           /* (c)  file comment */
+    zip_string_t comment;           /* (c)  file comment */
     zip_uint32_t disk_number;        /* (c)  disk number start */
     zip_uint16_t int_attrib;         /* (c)  internal file attributes */
     zip_uint32_t ext_attrib;         /* (c)  external file attributes */
@@ -392,7 +405,7 @@ struct zip_cdir {
     zip_uint64_t size;     /* size of central directory */
     zip_uint64_t offset;   /* offset of central directory in file */
     zip_uint64_t eocd_offset; /* offset of EOCD in file */
-    zip_string_t *comment; /* zip archive comment */
+    zip_string_t comment; /* zip archive comment */
     bool is_zip64;         /* central directory in zip64 format */
 };
 
@@ -452,19 +465,6 @@ struct zip_entry {
 #ifndef LIBZIP_MINIMAL
     bool deleted;
 #endif
-};
-
-
-/* file or archive comment, or filename */
-
-struct zip_string {
-    zip_uint16_t length;             /* length of raw string */
-#ifndef LIBZIP_MINIMAL
-    enum zip_encoding_type encoding; /* autorecognized encoding */
-    zip_uint8_t *converted;          /* autoconverted string */
-    zip_uint32_t converted_length;   /* length of converted */
-#endif
-    zip_uint8_t raw[];               /* raw string */
 };
 
 
@@ -627,10 +627,10 @@ zip_dirent_t *_zip_get_dirent(zip_t *, zip_uint64_t, zip_flags_t, zip_error_t *)
 enum zip_encoding_type _zip_guess_encoding(zip_string_t *, enum zip_encoding_type);
 zip_uint8_t *_zip_cp437_to_utf8(const zip_uint8_t *const, zip_uint32_t, zip_uint32_t *, zip_error_t *);
 
-bool _zip_hash_add(zip_hash_t *hash, const zip_uint8_t *name, zip_uint64_t index, zip_flags_t flags, zip_error_t *error);
+bool _zip_hash_add(zip_hash_t *hash, zip_string_t *name, zip_uint64_t index, zip_flags_t flags, zip_error_t *error);
 bool _zip_hash_delete(zip_hash_t *hash, const zip_uint8_t *key, zip_error_t *error);
 void _zip_hash_free(zip_hash_t *hash);
-zip_int64_t _zip_hash_lookup(zip_hash_t *hash, const zip_uint8_t *name, zip_flags_t flags, zip_error_t *error);
+zip_int64_t _zip_hash_lookup(zip_hash_t *hash, const zip_uint8_t *name, size_t length, zip_flags_t flags, zip_error_t *error);
 zip_hash_t *_zip_hash_new(zip_error_t *error);
 bool _zip_hash_reserve_capacity(zip_hash_t *hash, zip_uint64_t capacity, zip_error_t *error);
 bool _zip_hash_revert(zip_hash_t *hash, zip_error_t *error);
@@ -655,7 +655,7 @@ int _zip_read(zip_source_t *src, zip_uint8_t *data, zip_uint64_t length, zip_err
 int _zip_read_at_offset(zip_source_t *src, zip_uint64_t offset, unsigned char *b, size_t length, zip_error_t *error);
 zip_uint8_t *_zip_read_data(zip_buffer_t *buffer, zip_source_t *src, size_t length, bool nulp, zip_error_t *error);
 int _zip_read_local_ef(zip_t *, zip_uint64_t);
-zip_string_t *_zip_read_string(zip_buffer_t *buffer, zip_source_t *src, zip_uint16_t length, bool nulp, zip_error_t *error);
+bool _zip_read_string(zip_string_t *string, zip_buffer_t *buffer, zip_source_t *src, zip_uint16_t length, bool nulp, zip_error_t *error);
 int _zip_register_source(zip_t *za, zip_source_t *src);
 
 void _zip_set_open_error(int *zep, const zip_error_t *err, int ze);
@@ -674,12 +674,12 @@ zip_source_t *_zip_source_window_new(zip_source_t *src, zip_uint64_t start, zip_
 
 int _zip_stat_merge(zip_stat_t *dst, const zip_stat_t *src, zip_error_t *error);
 int _zip_string_equal(const zip_string_t *a, const zip_string_t *b);
-void _zip_string_free(zip_string_t *string);
+void _zip_string_finalize(zip_string_t *string);
 zip_uint32_t _zip_string_crc32(const zip_string_t *string);
 const zip_uint8_t *_zip_string_get(zip_string_t *string, zip_uint32_t *lenp, zip_flags_t flags, zip_error_t *error);
 bool _zip_string_is_ascii(const zip_string_t *string);
 zip_uint16_t _zip_string_length(const zip_string_t *string);
-zip_string_t *_zip_string_new(const zip_uint8_t *raw, zip_uint16_t length, zip_flags_t flags, zip_error_t *error);
+bool _zip_string_init(zip_string_t *string, const zip_uint8_t *raw, bool copy_raw, zip_uint16_t length, zip_flags_t flags, zip_error_t *error);
 int _zip_string_write(zip_t *za, const zip_string_t *string);
 bool _zip_winzip_aes_decrypt(zip_winzip_aes_t *ctx, zip_uint8_t *data, zip_uint64_t length);
 bool _zip_winzip_aes_encrypt(zip_winzip_aes_t *ctx, zip_uint8_t *data, zip_uint64_t length);
@@ -695,13 +695,14 @@ void _zip_pkware_keys_reset(zip_pkware_keys_t *keys);
 
 int _zip_changed(const zip_t *, zip_uint64_t *);
 const char *_zip_get_name(zip_t *, zip_uint64_t, zip_flags_t, zip_error_t *);
+const char *_zip_get_name_raw(zip_t *, zip_uint64_t, zip_flags_t, size_t *, zip_error_t *);
 int _zip_local_header_read(zip_t *, int);
 void *_zip_memdup(const void *, size_t, zip_error_t *);
-zip_int64_t _zip_name_locate(zip_t *, const char *, zip_flags_t, zip_error_t *);
-int _zip_name_cmp(const char *a, const char *b);
+zip_int64_t _zip_name_locate(zip_t *, const char *, zip_uint32_t, zip_flags_t, zip_error_t *);
+int _zip_name_cmp(const char *a, size_t a_len, const char *b, size_t b_len);
 zip_t *_zip_new(zip_error_t *);
 
-zip_int64_t _zip_file_replace(zip_t *, zip_uint64_t, const char *, zip_source_t *, zip_flags_t);
+zip_int64_t _zip_file_replace(zip_t *, zip_uint64_t, const char *, zip_uint32_t, zip_source_t *, zip_flags_t);
 int _zip_set_name(zip_t *, zip_uint64_t, const char *, zip_flags_t);
 int _zip_u2d_time(time_t, zip_dostime_t *, zip_error_t *);
 int _zip_unchange(zip_t *, zip_uint64_t, int);
