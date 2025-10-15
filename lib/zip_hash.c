@@ -40,8 +40,10 @@
 #define HASH_START 5381
 
 /* hash table's fill ratio is kept between these by doubling/halfing its size as necessary */
-#define HASH_MAX_FILL .75
-#define HASH_MIN_FILL .01
+#define HASH_MAX_FILL_NUMERATOR 3
+#define HASH_MAX_FILL_DENOMINATOR 4
+#define HASH_MIN_FILL_NUMERATOR 1
+#define HASH_MIN_FILL_DENOMINATOR 100
 
 /* but hash table size is kept between these */
 #define HASH_MIN_SIZE 256
@@ -400,9 +402,9 @@ _zip_hash_revert(zip_hash_t *hash, zip_error_t *error) {
         }
     }
 
-    if (hash->nentries < hash->table_size * HASH_MIN_FILL && hash->table_size > HASH_MIN_SIZE) {
+    if (hash->nentries * HASH_MAX_FILL_DENOMINATOR < hash->table_size * HASH_MIN_FILL_NUMERATOR && hash->table_size > HASH_MIN_SIZE) {
         zip_uint32_t new_size = hash->table_size / 2;
-        while (hash->nentries < new_size * HASH_MIN_FILL && new_size > HASH_MIN_SIZE) {
+        while (hash->nentries * HASH_MIN_FILL_DENOMINATOR < new_size * HASH_MIN_FILL_NUMERATOR && new_size > HASH_MIN_SIZE) {
             new_size /= 2;
         }
         if (!hash_resize(hash, new_size, error)) {
