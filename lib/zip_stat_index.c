@@ -104,6 +104,7 @@ zip_stat_index(zip_t *za, zip_uint64_t index, zip_flags_t flags, zip_stat_t *st)
 #endif
     }
 
+#ifndef LIBZIP_MINIMAL
     if ((za->ch_flags & ZIP_AFL_WANT_TORRENTZIP) && (flags & ZIP_FL_UNCHANGED) == 0) {
         if (za->torrent_mtime == 0) {
             zip_dostime_t dostime = {0xbc00, 0x2198};
@@ -114,6 +115,7 @@ zip_stat_index(zip_t *za, zip_uint64_t index, zip_flags_t flags, zip_stat_t *st)
         st->valid |= ZIP_STAT_MTIME | ZIP_STAT_COMP_METHOD;
         st->valid &= ~ZIP_STAT_COMP_SIZE;
     }
+#endif
 
     st->index = index;
 #ifdef LIBZIP_MINIMAL

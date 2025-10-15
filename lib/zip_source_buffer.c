@@ -158,7 +158,11 @@ zip_source_buffer_fragment_with_attributes_create(const zip_buffer_fragment_t *f
 
     ctx->in = buffer;
     ctx->out = NULL;
+#ifdef LIBZIP_MINIMAL
+    ctx->mtime = 0;
+#else
     ctx->mtime = time(NULL);
+#endif
     if (attributes) {
         (void)memcpy_s(&ctx->attributes, sizeof(ctx->attributes), attributes, sizeof(ctx->attributes));
     }

@@ -54,7 +54,9 @@ static bool check_eocd(zip_cdir_t *cd, unsigned int flags, zip_error_t *error);
 static bool check_magic(zip_uint64_t offset, zip_buffer_t *buffer, zip_uint64_t buffer_offset, zip_source_t *src, const char* magic);
 static zip_t *_zip_allocate_new(zip_source_t *src, unsigned int flags, zip_error_t *error);
 static zip_int64_t _zip_checkcons(zip_t *za, zip_cdir_t *cdir, zip_error_t *error);
+#ifndef LIBZIP_MINIMAL
 static void zip_check_torrentzip(zip_t *za, const zip_cdir_t *cdir);
+#endif
 static zip_cdir_t *_zip_find_central_dir(zip_t *za, zip_uint64_t len);
 static exists_t _zip_file_exists(zip_source_t *src, zip_error_t *error);
 static int _zip_headercomp(const zip_dirent_t *, const zip_dirent_t *);
@@ -950,6 +952,8 @@ cdir_status_t _zip_read_eocd64(zip_cdir_t *cdir, zip_source_t *src, zip_buffer_t
 }
 
 
+#ifndef LIBZIP_MINIMAL
+
 static int
 decode_hex(char c) {
     if (c >= '0' && c <= '9') {
@@ -966,7 +970,6 @@ decode_hex(char c) {
 /* _zip_check_torrentzip:
    check whether ZA has a valid TORRENTZIP comment, i.e. is torrentzipped */
 
-#ifndef LIBZIP_MINIMAL
 static void
 zip_check_torrentzip(zip_t *za, const zip_cdir_t *cdir) {
     zip_uint32_t crc_should;
